@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Handles Player controlls and Player behaviour
+/// Handles Player behaviour
 /// </summary>
 public class Player : GameCharacter
 {
@@ -14,9 +14,8 @@ public class Player : GameCharacter
     [SerializeField] private AudioClip deathSound;
     [SerializeField] private AudioClip throwSound;
     [SerializeField] private AudioClip healthSound;
-    private AudioSource soundsSource;
-    private float horizontalInput;
-    private float verticalInput;
+    private SoundManager soundManager;
+    private PlayerController playerController;
     private bool isAtacked = false;
 
     void Awake()
@@ -27,22 +26,19 @@ public class Player : GameCharacter
         zBotBound = 0f;
         characterRb = GetComponent<Rigidbody>();
         characterAnimator = GetComponent<Animator>();
-        soundsSource = GameObject.Find("SoundsSource").GetComponent<AudioSource>();
+        playerController = GetComponent<PlayerController>();
+        soundManager = GameObject.Find("SoundManager").GetComponent<SoundManager>();
     }
 
     void Update()
     {
         if (!isDead)
         {
-            RotatingTowardsMouse();
-            if (GameManager.gameInProgress)
+            playerController.GetMousePosition();
+            if (GameManager.isGameInProgress)
             {
-                GetInput();
+                playerController.GetInput();
                 ChangeRunningAnimation();
-                if (Input.GetMouseButtonDown(0))
-                {
-                    ThrowFood();
-                }
             }
         }
         CheckMapBounds();
@@ -52,11 +48,29 @@ public class Player : GameCharacter
     {
         if (!isAtacked)
         {
-            Move(new Vector3(horizontalInput, 0, verticalInput));
+            Move(new Vector3(playerController.horizontalInput, 0, playerController.verticalInput));
         }
         if (isDead)
         {
             StopMoving();
+        }
+    }
+
+    public void RotateTowardsMouse(Vector3 pointToLook)
+    {
+        transform.LookAt(new Vector3(pointToLook.x, transform.position.y, pointToLook.z));
+    }
+
+    public void ThrowFood()
+    {
+        GameObject food = ObjectPooler.SharedInstance.GetPooledObject();
+
+        if (food != null)
+        {
+            food.transform.position = transform.position + transform.forward * 1.5f;
+            food.transform.rotation = transform.rotation;
+            food.SetActive(true);
+            soundManager.PlaySound(throwSound);
         }
     }
 
@@ -83,36 +97,14 @@ public class Player : GameCharacter
         {
             currentHealth = maxHealth;
             other.gameObject.SetActive(false);
-            soundsSource.PlayOneShot(healthSound);
-        }
-    }
-
-    protected override void CheckMapBounds()
-    {
-        //Horizontal boundaries
-        if (transform.position.x < -xRangeBound)
-        {
-            transform.position = new Vector3(-xRangeBound, transform.position.y, transform.position.z);
-        }
-        else if (transform.position.x > xRangeBound)
-        {
-            transform.position = new Vector3(xRangeBound, transform.position.y, transform.position.z);
-        }
-        //Vertical boundaries
-        if (transform.position.z < zBotBound)
-        {
-            transform.position = new Vector3(transform.position.x, transform.position.y, zBotBound);
-        }
-        else if (transform.position.z > zTopBound)
-        {
-            transform.position = new Vector3(transform.position.x, transform.position.y, zTopBound);
+            soundManager.PlaySound(healthSound);
         }
     }
 
     private IEnumerator ApplyDamagePerTime(int damage, Vector3 forceDirection, float time)
     {
         ApplyDamage(damage);
-        soundsSource.PlayOneShot(hitSound);
+        soundManager.PlaySound(hitSound);
         characterRb.AddForce(forceDirection * 500.0f, ForceMode.Impulse);
         characterAnimator.SetBool("Grounded", false);
         yield return new WaitForSeconds(time);
@@ -133,17 +125,11 @@ public class Player : GameCharacter
     {
         int deathType = Random.Range(1, 3);
 
-        soundsSource.PlayOneShot(deathSound);
+        soundManager.PlaySound(deathSound);
         isDead = true;
-        StopGettingInput();
+        playerController.StopGettingInput();
         characterAnimator.SetInteger("DeathType_int", deathType);
         characterAnimator.SetBool("Death_b", true);
-    }
-
-    private void StopGettingInput()
-    {
-        horizontalInput = 0f;
-        verticalInput = 0f;
     }
 
     private void StopMoving()
@@ -152,43 +138,9 @@ public class Player : GameCharacter
         characterRb.velocity = Vector3.zero;
     }
 
-    private void ThrowFood()
-    {
-        GameObject food = ObjectPooler.SharedInstance.GetPooledObject();
-
-        if (food != null)
-        {
-            food.transform.position = transform.position + transform.forward * 1.5f;
-            food.transform.rotation = transform.rotation;
-            food.SetActive(true);
-            soundsSource.PlayOneShot(throwSound);
-        }
-    }
-
-    private void GetInput()
-    {
-        horizontalInput = Input.GetAxis("Horizontal");
-        verticalInput = Input.GetAxis("Vertical");
-    }
-
-    private void RotatingTowardsMouse()
-    {
-        Ray cameraRay = Camera.main.ScreenPointToRay(Input.mousePosition);
-        Plane groundPlane = new Plane(Vector3.up, Vector3.zero);
-        float rayLength;
-
-        if (groundPlane.Raycast(cameraRay, out rayLength))
-        {
-            Vector3 pointToLook = cameraRay.GetPoint(rayLength);
-            //Debug.DrawLine(cameraRay.origin, pointToLook, Color.cyan);
-
-            transform.LookAt(new Vector3(pointToLook.x, transform.position.y, pointToLook.z));
-        }
-    }
-
     private void ChangeRunningAnimation()
     {
-        if (horizontalInput != 0 || verticalInput != 0)
+        if (playerController.horizontalInput != 0 || playerController.verticalInput != 0)
         {
             characterAnimator.SetFloat("Speed_f", 0.55f);
         }

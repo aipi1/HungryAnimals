@@ -2,28 +2,21 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
-using TMPro;
 using System.IO;
 
 /// <summary>
-/// Handles game flow, UI and save/load high score to a json
+/// Handles game flow and save/load of bestScore to a json file
 /// </summary>
 public class GameManager : MonoBehaviour
 {
-    public static bool gameInProgress = false;
-    private static bool isFirstGame = true;
-    [SerializeField] private TextMeshProUGUI scoreText;
-    [SerializeField] private TextMeshProUGUI finalScoreText;
-    [SerializeField] private TextMeshProUGUI bestScoreText;
-    [SerializeField] private GameObject mainMenuScreen;
-    [SerializeField] private GameObject healthBar;
-    [SerializeField] private GameObject hintText;
-    [SerializeField] private GameObject gameOverScreen;
-    [SerializeField] private GameObject spawnManager;
-    [SerializeField] private Player player;
+    public static bool isGameInProgress = false;
+    public static bool isFirstGame = true;
+    public static bool isGamePaused = false;
     [SerializeField] private AudioClip buttonSound;
-    private AudioSource bgMusicSource;
-    private AudioSource soundsSource;
+    [SerializeField] private GameObject spawnManager;
+    private Player player;
+    private SoundManager soundManager;
+    private UIManager uIManager;
     private IEnumerator updateScore;
     private float scoreUpdateDelay = 1.0f;
     private int score;
@@ -33,13 +26,17 @@ public class GameManager : MonoBehaviour
 
     void Awake()
     {
-        bgMusicSource = GameObject.Find("BgMusicSource").GetComponent<AudioSource>();
-        soundsSource = GameObject.Find("SoundsSource").GetComponent<AudioSource>();
+        player = GameObject.Find("Player").GetComponent<Player>();
+        soundManager = GameObject.Find("SoundManager").GetComponent<SoundManager>();
+        uIManager = GameObject.Find("UIManager").GetComponent<UIManager>();
+        // When QuitButton is pressed from PauseScreen
+        Time.timeScale = 1;
+        isGamePaused = false;
     }
 
     void Update()
     {
-        if (player.isDead && gameInProgress)
+        if (player.isDead && isGameInProgress)
         {
             GameOver();
         }
@@ -47,26 +44,42 @@ public class GameManager : MonoBehaviour
 
     public void StartGame()
     {
-        gameInProgress = true;
-        soundsSource.PlayOneShot(buttonSound);
-        bgMusicSource.Play();
+        isGameInProgress = true;
+        score = 0;
+        soundManager.PlaySound(buttonSound);
+        soundManager.PlayMusic();
         DestroyAllEnemies();
-        HandleStartGameUI();
+        spawnManager.SetActive(true);
+        updateScore = UpdateScore();
+        StartCoroutine(updateScore);
+        uIManager.HideMainMenuUI();
+        uIManager.ShowGameplayUI(score);
     }
 
     private void GameOver()
     {
-        gameInProgress = false;
-        bgMusicSource.Stop();
-        HandleGameOverUI();
+        isGameInProgress = false;
+        soundManager.StopMusic();
+        spawnManager.SetActive(false);
+        StopCoroutine(updateScore);
+        uIManager.HideGameplayUI();
+        LoadBestScore();
+        if (score > bestScore)
+        {
+            SaveBestScore();
+            uIManager.ShowGameOverUI(score, score);
+        }
+        else
+        {
+            uIManager.ShowGameOverUI(score, bestScore);
+        }
     }
 
     public void RetryPressed()
     {
-        soundsSource.PlayOneShot(buttonSound);
-        gameOverScreen.SetActive(false);
         ResetPlayer();
         StartGame();
+        uIManager.HideGameOverUI();
     }
 
     public void QuitPressed()
@@ -78,51 +91,42 @@ public class GameManager : MonoBehaviour
         }
     }
 
+    public void PauseGame()
+    {
+        Time.timeScale = 0;
+        isGamePaused = true;
+        soundManager.PlaySound(buttonSound);
+        soundManager.PauseMusic();
+        uIManager.ShowPauseMenu();
+    }
+
+    public void UnpauseGame()
+    {
+        Time.timeScale = 1;
+        isGamePaused = false;
+        soundManager.PlaySound(buttonSound);
+        soundManager.PlayMusic();
+        uIManager.HidePauseMenu();
+    }
+
+    private IEnumerator UpdateScore()
+    {
+        while (score < maxScore)
+        {
+            yield return new WaitForSeconds(scoreUpdateDelay);
+            score += (int)SpawnManager.healthRepeatRate;
+            uIManager.UpdateScoreText(score, maxScore);
+        }
+    }
+
     private IEnumerator QuitAfterSound()
     {
         isQuitPressed = true;
-        soundsSource.PlayOneShot(buttonSound);
-        yield return new WaitWhile(() => soundsSource.isPlaying);
-        isQuitPressed = false;
-        SceneManager.LoadScene(SceneManager.GetActiveScene().name);
-    }
-
-    private void HandleStartGameUI()
-    {
-        mainMenuScreen.SetActive(false);
-        if (isFirstGame)
-        {
-            isFirstGame = false;
-            StartCoroutine(ShowHint());
-        }
-        healthBar.SetActive(true);
-        updateScore = UpdateScore();
-        score = 0;
-        scoreText.text = $"Score: {score}";
-        StartCoroutine(updateScore);
-        scoreText.gameObject.SetActive(true);
-        spawnManager.SetActive(true);
-    }
-
-    private void HandleGameOverUI()
-    {
-        hintText.SetActive(false);
+        isGameInProgress = false;
         spawnManager.SetActive(false);
-        healthBar.SetActive(false);
-        StopCoroutine(updateScore);
-        scoreText.gameObject.SetActive(false);
-        finalScoreText.text = $"Final score: {score}";
-        LoadBestScore();
-        if (score > bestScore)
-        {
-            SaveBestScore();
-            bestScoreText.text = $"Best score: {score}";
-        }
-        else
-        {
-            bestScoreText.text = $"Best score: {bestScore}";
-        }
-        gameOverScreen.SetActive(true);
+        soundManager.PlaySound(buttonSound);
+        yield return new WaitWhile(() => soundManager.IsEffectsSourcePlaying());
+        SceneManager.LoadScene(SceneManager.GetActiveScene().name);
     }
 
     private void DestroyAllEnemies()
@@ -142,24 +146,6 @@ public class GameManager : MonoBehaviour
         player.characterAnimator.Update(0f);
         player.transform.position = Vector3.zero;
         player.currentHealth = player.maxHealth;
-    }
-
-    private IEnumerator ShowHint()
-    {
-        hintText.SetActive(true);
-        yield return new WaitForSeconds(7.0f);
-        hintText.SetActive(false);
-    }
-
-    private IEnumerator UpdateScore()
-    {
-        while (score < maxScore)
-        {
-            yield return new WaitForSeconds(scoreUpdateDelay);
-            score += (int)SpawnManager.healthRepeatRate;
-            scoreText.text = $"Score: {score}";
-        }
-        scoreText.color = new Color32(0xB2, 0x35, 0x35, 0xFF);
     }
 
     [System.Serializable]

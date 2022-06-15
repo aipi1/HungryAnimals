@@ -30,7 +30,10 @@ public class SpawnManager : MonoBehaviour
 
     void OnDisable()
     {
-        healthBonus.SetActive(false);
+        if (healthBonus != null)
+        {
+            healthBonus.SetActive(false);
+        }
         CancelInvoke("SpawnRandomEnemy");
         CancelInvoke("SpawnHealthBonus");
     }

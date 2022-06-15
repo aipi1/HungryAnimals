@@ -23,5 +23,25 @@ public abstract class GameCharacter : MonoBehaviour, IMovable
         characterRb.velocity = direction * Speed;
     }
 
-    protected abstract void CheckMapBounds();
+    protected virtual void CheckMapBounds()
+    {
+        //Horizontal boundaries
+        if (transform.position.x < -xRangeBound)
+        {
+            transform.position = new Vector3(-xRangeBound, transform.position.y, transform.position.z);
+        }
+        else if (transform.position.x > xRangeBound)
+        {
+            transform.position = new Vector3(xRangeBound, transform.position.y, transform.position.z);
+        }
+        //Vertical boundaries
+        if (transform.position.z < zBotBound)
+        {
+            transform.position = new Vector3(transform.position.x, transform.position.y, zBotBound);
+        }
+        else if (transform.position.z > zTopBound)
+        {
+            transform.position = new Vector3(transform.position.x, transform.position.y, zTopBound);
+        }
+    }
 }
